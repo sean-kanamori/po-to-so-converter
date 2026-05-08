@@ -116,6 +116,14 @@ body {
   outline: none;
 }
 .input:focus { border-color: var(--accent-secondary); }
+.input.input-error { border-color: var(--error) !important; background: #fff8f8; }
+.input.input-error:focus { border-color: var(--error) !important; }
+.field-error-msg {
+  font-size: 11px;
+  color: var(--error);
+  margin-top: 3px;
+  font-weight: 700;
+}
 
 .field-label {
   display: block;

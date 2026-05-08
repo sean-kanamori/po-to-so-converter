@@ -9,7 +9,82 @@ function nextId() {
   return `po-${++idCounter}-${Date.now()}`;
 }
 
-// ─── Editable field ───────────────────────────────────────────────────────────
+// ─── Validation helpers ───────────────────────────────────────────────────────
+
+/** MM/DD/YYYY — blank is allowed (not required) */
+function isValidDate(v: string): boolean {
+  if (!v.trim()) return true;
+  return /^(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01])\/\d{4}$/.test(v.trim());
+}
+
+/** Positive whole number */
+function isValidQty(v: string): boolean {
+  if (!String(v).trim()) return true;
+  return /^\d+$/.test(String(v).trim()) && Number(v) > 0;
+}
+
+/** Non-negative number, optionally prefixed with $ and with commas */
+function isValidPrice(v: string): boolean {
+  if (!String(v).trim()) return true;
+  const cleaned = String(v).replace(/^\$/, "").replace(/,/g, "").trim();
+  return cleaned !== "" && !isNaN(Number(cleaned)) && Number(cleaned) >= 0;
+}
+
+/**
+ * Auto-format a date string as the user types.
+ * Inserts slashes after MM and DD so the user only needs to type digits.
+ */
+function formatDateInput(raw: string, prev: string): string {
+  // Let backspace / delete work freely — don't fight the user
+  if (raw.length < prev.length) return raw;
+  const digits = raw.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+/** Count all validation errors across a PO */
+function countErrors(po: PurchaseOrder): number {
+  let n = 0;
+  if (!isValidDate(po.date)) n++;
+  if (!isValidDate(po.requestedShipDate)) n++;
+  po.lineItems.forEach((item) => {
+    if (!isValidQty(String(item.qty))) n++;
+    if (!isValidPrice(String(item.pricePerUnit))) n++;
+  });
+  return n;
+}
+
+// ─── Validated date field ─────────────────────────────────────────────────────
+function DateField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const invalid = !isValidDate(value);
+  return (
+    <div>
+      <label className="field-label">{label}</label>
+      <input
+        className={`input${invalid && value ? " input-error" : ""}`}
+        type="text"
+        placeholder="MM/DD/YYYY"
+        value={value}
+        maxLength={10}
+        onChange={(e) => onChange(formatDateInput(e.target.value, value))}
+      />
+      {invalid && value && (
+        <p className="field-error-msg">Use MM/DD/YYYY format</p>
+      )}
+    </div>
+  );
+}
+
+// ─── Generic editable field ───────────────────────────────────────────────────
 function Field({
   label,
   value,
@@ -104,6 +179,8 @@ function SOCard({
     });
   }
 
+  const errorCount = po ? countErrors(po) : 0;
+
   return (
     <div className="card" style={{ marginBottom: 24 }}>
       <div className="card-header-bar" />
@@ -125,13 +202,22 @@ function SOCard({
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {poFile.status === "extracting" && (
-              <span className="badge badge-processing" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span
+                className="badge badge-processing"
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+              >
                 <span className="spinner" style={{ width: 10, height: 10 }} />
                 Extracting…
               </span>
             )}
-            {poFile.status === "done" && (
+            {poFile.status === "done" && errorCount === 0 && (
               <span className="badge badge-done">✓ Extracted</span>
+            )}
+            {poFile.status === "done" && errorCount > 0 && (
+              <span className="badge badge-error">
+                ⚠ {errorCount} field{errorCount !== 1 ? "s" : ""} need
+                {errorCount === 1 ? "s" : ""} review
+              </span>
             )}
             {poFile.status === "error" && (
               <span className="badge badge-error">✗ Error</span>
@@ -188,12 +274,12 @@ function SOCard({
                   value={po.poNumber}
                   onChange={(v) => updateField("root", "poNumber", v)}
                 />
-                <Field
+                <DateField
                   label="Date"
                   value={po.date}
                   onChange={(v) => updateField("root", "date", v)}
                 />
-                <Field
+                <DateField
                   label="Requested Ship Date"
                   value={po.requestedShipDate}
                   onChange={(v) => updateField("root", "requestedShipDate", v)}
@@ -246,7 +332,9 @@ function SOCard({
                   >
                     {title}
                   </p>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 10 }}
+                  >
                     <Field
                       label="Company Name"
                       value={po[key].companyName}
@@ -293,83 +381,122 @@ function SOCard({
                 <table className="so-table">
                   <thead>
                     <tr>
-                      <th style={{ width: 60 }}>Qty</th>
+                      <th style={{ width: 72 }}>Qty</th>
                       <th style={{ width: 100 }}>Item #</th>
                       <th>Description</th>
-                      <th style={{ width: 110 }}>Price / Unit</th>
+                      <th style={{ width: 120 }}>Price / Unit</th>
                       <th style={{ width: 110 }}>Extended</th>
                       <th style={{ width: 36 }} />
                     </tr>
                   </thead>
                   <tbody>
-                    {po.lineItems.map((item, li) => (
-                      <tr key={li}>
-                        <td>
-                          <input
-                            className="input"
-                            style={{ padding: "4px 6px", fontSize: 13 }}
-                            value={String(item.qty)}
-                            onChange={(e) =>
-                              updateLineItem(li, "qty", e.target.value)
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            className="input"
-                            style={{ padding: "4px 6px", fontSize: 13 }}
-                            value={item.itemNumber}
-                            onChange={(e) =>
-                              updateLineItem(li, "itemNumber", e.target.value)
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            className="input"
-                            style={{ padding: "4px 6px", fontSize: 13 }}
-                            value={item.description}
-                            onChange={(e) =>
-                              updateLineItem(li, "description", e.target.value)
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            className="input"
-                            style={{ padding: "4px 6px", fontSize: 13 }}
-                            value={String(item.pricePerUnit)}
-                            onChange={(e) =>
-                              updateLineItem(li, "pricePerUnit", e.target.value)
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            className="input"
-                            style={{ padding: "4px 6px", fontSize: 13 }}
-                            value={String(item.extendedPrice)}
-                            onChange={(e) =>
-                              updateLineItem(
-                                li,
-                                "extendedPrice",
-                                e.target.value
-                              )
-                            }
-                          />
-                        </td>
-                        <td>
-                          <button
-                            className="btn-ghost"
-                            style={{ padding: "2px 6px", color: "var(--error)" }}
-                            onClick={() => removeLineItem(li)}
-                            title="Remove line"
-                          >
-                            ✕
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {po.lineItems.map((item, li) => {
+                      const qtyInvalid =
+                        String(item.qty) !== "" && !isValidQty(String(item.qty));
+                      const priceInvalid =
+                        String(item.pricePerUnit) !== "" &&
+                        !isValidPrice(String(item.pricePerUnit));
+
+                      return (
+                        <tr key={li}>
+                          {/* ── Qty ── */}
+                          <td>
+                            <input
+                              className={`input${qtyInvalid ? " input-error" : ""}`}
+                              style={{ padding: "4px 6px", fontSize: 13 }}
+                              value={String(item.qty)}
+                              placeholder="0"
+                              title="Whole number required"
+                              onChange={(e) => {
+                                // Strip anything that isn't a digit
+                                const val = e.target.value.replace(/\D/g, "");
+                                updateLineItem(li, "qty", val);
+                              }}
+                            />
+                            {qtyInvalid && (
+                              <p className="field-error-msg">Whole number</p>
+                            )}
+                          </td>
+
+                          {/* ── Item # ── */}
+                          <td>
+                            <input
+                              className="input"
+                              style={{ padding: "4px 6px", fontSize: 13 }}
+                              value={item.itemNumber}
+                              onChange={(e) =>
+                                updateLineItem(li, "itemNumber", e.target.value)
+                              }
+                            />
+                          </td>
+
+                          {/* ── Description ── */}
+                          <td>
+                            <input
+                              className="input"
+                              style={{ padding: "4px 6px", fontSize: 13 }}
+                              value={item.description}
+                              onChange={(e) =>
+                                updateLineItem(li, "description", e.target.value)
+                              }
+                            />
+                          </td>
+
+                          {/* ── Price / Unit ── */}
+                          <td>
+                            <input
+                              className={`input${priceInvalid ? " input-error" : ""}`}
+                              style={{ padding: "4px 6px", fontSize: 13 }}
+                              value={String(item.pricePerUnit)}
+                              placeholder="0.00"
+                              title="Numeric value required"
+                              onChange={(e) => {
+                                // Allow digits, decimal point, dollar sign, commas
+                                const val = e.target.value.replace(
+                                  /[^\d.,$]/g,
+                                  ""
+                                );
+                                updateLineItem(li, "pricePerUnit", val);
+                              }}
+                            />
+                            {priceInvalid && (
+                              <p className="field-error-msg">Numeric value</p>
+                            )}
+                          </td>
+
+                          {/* ── Extended ── */}
+                          <td>
+                            <input
+                              className="input"
+                              style={{ padding: "4px 6px", fontSize: 13 }}
+                              value={String(item.extendedPrice)}
+                              onChange={(e) =>
+                                updateLineItem(
+                                  li,
+                                  "extendedPrice",
+                                  e.target.value
+                                )
+                              }
+                            />
+                          </td>
+
+                          {/* ── Remove ── */}
+                          <td>
+                            <button
+                              className="btn-ghost"
+                              style={{
+                                padding: "2px 6px",
+                                color: "var(--error)",
+                              }}
+                              onClick={() => removeLineItem(li)}
+                              title="Remove line"
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -384,7 +511,9 @@ function SOCard({
                 <button className="btn-ghost" onClick={addLineItem}>
                   + Add Line
                 </button>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: 10 }}
+                >
                   <span
                     style={{
                       fontSize: 12,
@@ -493,6 +622,10 @@ export default function Home() {
   }
 
   const donePOs = poFiles.filter((p) => p.status === "done" && p.data);
+  const totalErrors = donePOs.reduce(
+    (sum, p) => sum + countErrors(p.data!),
+    0
+  );
 
   function exportAll() {
     const orders = donePOs.map((p) => p.data!);
@@ -534,22 +667,38 @@ export default function Home() {
           </span>
         </div>
         {donePOs.length > 0 && (
-          <button
-            className="btn-primary"
-            style={{
-              background: "#fff",
-              color: "var(--accent)",
-              fontSize: 13,
-              padding: "7px 16px",
-            }}
-            onClick={exportAll}
-          >
-            ↓ Export All ({donePOs.length}) to CSV
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {totalErrors > 0 && (
+              <span
+                style={{
+                  fontSize: 12,
+                  color: "#ffd0cc",
+                  fontWeight: 700,
+                }}
+              >
+                ⚠ {totalErrors} validation issue
+                {totalErrors !== 1 ? "s" : ""}
+              </span>
+            )}
+            <button
+              className="btn-primary"
+              style={{
+                background: "#fff",
+                color: "var(--accent)",
+                fontSize: 13,
+                padding: "7px 16px",
+              }}
+              onClick={exportAll}
+            >
+              ↓ Export All ({donePOs.length}) to CSV
+            </button>
+          </div>
         )}
       </header>
 
-      <main style={{ maxWidth: 960, margin: "0 auto", padding: "32px 24px 64px" }}>
+      <main
+        style={{ maxWidth: 960, margin: "0 auto", padding: "32px 24px 64px" }}
+      >
         {/* ── Upload area ── */}
         <div className="card" style={{ marginBottom: 32 }}>
           <div className="card-header-bar" />
@@ -568,9 +717,7 @@ export default function Home() {
               onDragLeave={() => setDragOver(false)}
               onDrop={handleDrop}
             >
-              <div
-                style={{ fontSize: 36, marginBottom: 12, lineHeight: 1 }}
-              >
+              <div style={{ fontSize: 36, marginBottom: 12, lineHeight: 1 }}>
                 📄
               </div>
               <p
@@ -583,7 +730,13 @@ export default function Home() {
               >
                 Drop PDF purchase orders here
               </p>
-              <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+              <p
+                style={{
+                  fontSize: 13,
+                  color: "var(--muted)",
+                  marginBottom: 16,
+                }}
+              >
                 or click to browse — any PO format accepted
               </p>
               <button
