@@ -31,8 +31,52 @@ function isValidPrice(v: string): boolean {
 }
 
 /**
- * Auto-format a date string as the user types.
- * Inserts slashes after MM and DD so the user only needs to type digits.
+ * Best-effort conversion of any recognisable date string → MM/DD/YYYY.
+ * Returns the original string unchanged if the format cannot be determined.
+ */
+function parseToMMDDYYYY(v: string): string {
+  const s = v.trim();
+  if (!s) return v;
+
+  // Already MM/DD/YYYY — nothing to do
+  if (/^(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01])\/\d{4}$/.test(s)) return s;
+
+  // YYYY-MM-DD  (ISO 8601)
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return `${iso[2]}/${iso[3]}/${iso[1]}`;
+
+  // MM-DD-YYYY  or  M-D-YYYY
+  const mdy = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (mdy)
+    return `${mdy[1].padStart(2, "0")}/${mdy[2].padStart(2, "0")}/${mdy[3]}`;
+
+  // M/D/YY  or  M/D/YYYY  (handles short year)
+  const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (slash) {
+    const yr =
+      slash[3].length === 2 ? `20${slash[3]}` : slash[3];
+    return `${slash[1].padStart(2, "0")}/${slash[2].padStart(2, "0")}/${yr}`;
+  }
+
+  // YYYYMMDD  (compact numeric)
+  const compact = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (compact) return `${compact[2]}/${compact[3]}/${compact[1]}`;
+
+  // Named-month formats: "January 15, 2025" · "Jan 15 2025" · "15-Jan-2025" etc.
+  // Let the JS engine handle these, but guard against ambiguous 2-digit years.
+  const d = new Date(s);
+  if (!isNaN(d.getTime()) && d.getFullYear() > 1900) {
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${mm}/${dd}/${d.getFullYear()}`;
+  }
+
+  return v; // unrecognised — leave as-is
+}
+
+/**
+ * Auto-format a date string as the user types digits.
+ * Inserts slashes after MM and DD.
  */
 function formatDateInput(raw: string, prev: string): string {
   // Let backspace / delete work freely — don't fight the user
@@ -76,6 +120,11 @@ function DateField({
         value={value}
         maxLength={10}
         onChange={(e) => onChange(formatDateInput(e.target.value, value))}
+        onBlur={(e) => {
+          // On blur, attempt to translate any pasted/typed non-standard date
+          const normalised = parseToMMDDYYYY(e.target.value);
+          if (normalised !== e.target.value) onChange(normalised);
+        }}
       />
       {invalid && value && (
         <p className="field-error-msg">Use MM/DD/YYYY format</p>
@@ -579,10 +628,13 @@ export default function Home() {
         throw new Error(json.error || "Extraction failed");
       }
 
+      const raw = json.data;
       const po: PurchaseOrder = {
         id,
         fileName: file.name,
-        ...json.data,
+        ...raw,
+        date: parseToMMDDYYYY(raw.date ?? ""),
+        requestedShipDate: parseToMMDDYYYY(raw.requestedShipDate ?? ""),
       };
 
       setPoFiles((prev) =>
