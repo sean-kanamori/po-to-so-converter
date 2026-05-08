@@ -663,7 +663,7 @@ export default function Home() {
               letterSpacing: "0.3px",
             }}
           >
-            PO → SO Converter
+            Actek Mfg. Purchase Order Reader
           </span>
         </div>
         {donePOs.length > 0 && (
