@@ -23,6 +23,18 @@ function isValidQty(v: string): boolean {
   return /^\d+$/.test(String(v).trim()) && Number(v) > 0;
 }
 
+/**
+ * Strip commas and any decimal portion, returning a plain integer string.
+ * "1,241"    → "1241"
+ * "1,000.00" → "1000"
+ * "2.5"      → "2"
+ */
+function normalizeQty(v: string): string {
+  const withoutCommas = String(v).replace(/,/g, "");
+  const integerPart = withoutCommas.split(".")[0];
+  return integerPart.replace(/\D/g, "");
+}
+
 /** Non-negative number, optionally prefixed with $ and with commas */
 function isValidPrice(v: string): boolean {
   if (!String(v).trim()) return true;
@@ -457,9 +469,7 @@ function SOCard({
                               placeholder="0"
                               title="Whole number required"
                               onChange={(e) => {
-                                // Strip anything that isn't a digit
-                                const val = e.target.value.replace(/\D/g, "");
-                                updateLineItem(li, "qty", val);
+                                updateLineItem(li, "qty", normalizeQty(e.target.value));
                               }}
                             />
                             {qtyInvalid && (
@@ -635,6 +645,12 @@ export default function Home() {
         ...raw,
         date: parseToMMDDYYYY(raw.date ?? ""),
         requestedShipDate: parseToMMDDYYYY(raw.requestedShipDate ?? ""),
+        lineItems: (raw.lineItems ?? []).map(
+          (item: Record<string, string>) => ({
+            ...item,
+            qty: normalizeQty(String(item.qty ?? "")),
+          })
+        ),
       };
 
       setPoFiles((prev) =>
