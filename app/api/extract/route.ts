@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
 
     const response = await client.messages.create({
       model: "claude-opus-4-5",
-      max_tokens: 4096,
+      max_tokens: 16000,
       messages: [
         {
           role: "user",
@@ -104,8 +104,13 @@ export async function POST(request: NextRequest) {
     try {
       extracted = JSON.parse(cleaned);
     } catch {
+      // Help diagnose truncation: report how many tokens were used
+      const hint =
+        response.stop_reason === "max_tokens"
+          ? "Response was cut off (max_tokens reached) — the PO may be too large."
+          : "Claude returned non-JSON output.";
       return NextResponse.json(
-        { error: "Failed to parse extracted data", raw: rawText },
+        { error: `Failed to parse extracted data: ${hint}`, raw: rawText },
         { status: 422 }
       );
     }
