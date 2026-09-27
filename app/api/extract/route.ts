@@ -5,6 +5,30 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+// Basic abuse protection for a public demo that runs on a paid API key.
+// Counts live in memory, so they reset when a serverless instance recycles;
+// that's fine for keeping casual traffic in check, not a hard guarantee.
+const PER_IP_LIMIT = 5;
+const GLOBAL_LIMIT = 100;
+const WINDOW_MS = 24 * 60 * 60 * 1000;
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const hits = new Map<string, number[]>();
+let globalHits: number[] = [];
+
+function allowRequest(ip: string): boolean {
+  const cutoff = Date.now() - WINDOW_MS;
+  globalHits = globalHits.filter((t) => t > cutoff);
+  const mine = (hits.get(ip) ?? []).filter((t) => t > cutoff);
+  if (mine.length >= PER_IP_LIMIT || globalHits.length >= GLOBAL_LIMIT) {
+    hits.set(ip, mine);
+    return false;
+  }
+  mine.push(Date.now());
+  hits.set(ip, mine);
+  globalHits.push(Date.now());
+  return true;
+}
+
 const EXTRACTION_PROMPT = `You are a purchase order data extraction specialist. Extract all information from this purchase order PDF and return it as a single valid JSON object with exactly this structure — no markdown, no explanation, just the JSON:
 
 {
@@ -66,6 +90,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "File must be a PDF" },
         { status: 400 }
+      );
+    }
+
+    if (file.size > MAX_FILE_BYTES) {
+      return NextResponse.json(
+        { error: "File is too large (10 MB max)." },
+        { status: 413 }
+      );
+    }
+
+    const ip =
+      request.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
+      request.headers.get("x-real-ip") ||
+      "unknown";
+    if (!allowRequest(ip)) {
+      return NextResponse.json(
+        {
+          error:
+            "Demo limit reached: this public demo allows 5 purchase orders per day. Please try again tomorrow.",
+        },
+        { status: 429 }
       );
     }
 

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Actek Mfg. Purchase Order Reader",
+  title: "PO Reader",
   description: "Upload purchase orders and extract data for sales orders",
 };
 

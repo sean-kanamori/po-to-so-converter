@@ -731,7 +731,7 @@ export default function Home() {
               letterSpacing: "0.3px",
             }}
           >
-            Actek Mfg. Purchase Order Reader
+            PO Reader
           </span>
         </div>
         {donePOs.length > 0 && (
