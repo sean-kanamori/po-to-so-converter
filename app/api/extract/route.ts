@@ -38,6 +38,12 @@ const EXTRACTION_PROMPT = `You are a purchase order data extraction specialist. 
   "poTotal": ""
 }
 
+Who is who:
+- This purchase order was issued by a customer (the buyer) to us (the vendor/supplier). We are turning it into a Sales Order for that customer.
+- billTo is the customer who issued the PO and will pay the invoice. Use an explicit "Bill To", "Invoice To", or "Accounts Payable" block if one exists; otherwise use the issuing company's name, address, and phone from the letterhead/header. For contactName, use the buyer or purchasing contact if one is named.
+- shipTo is the "Ship To" / "Deliver To" block. If there is none, copy billTo.
+- Never put the vendor/supplier (the "Vendor", "Supplier", "Sold By", or "To:" addressee the PO is sent to) in billTo or shipTo — that is us.
+
 Rules:
 - Extract every line item as a separate object in lineItems
 - For extendedPrice: if not explicitly shown, calculate qty × pricePerUnit
